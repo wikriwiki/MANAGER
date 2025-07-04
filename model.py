@@ -82,13 +82,13 @@ class MyModel(nn.Module):
         self.audio_projection = nn.Linear(hidden_dim1, hidden_dim2)
         self.video_projection = nn.Linear(hidden_dim1, hidden_dim2)
         self.text_projection = nn.Linear(hidden_dim1, hidden_dim2)
-        self.question_projection = nn.Linear(hidden_dim1, hidden_dim2)
+        # self.question_projection = nn.Linear(hidden_dim1, hidden_dim2)
 
         self.pos_encoder = PositionalEncoding(hidden_dim1)
         self.text_modal_token = nn.Parameter(torch.randn(1, hidden_dim2))  # shape: [1, hidden_dim2]
         self.audio_modal_token = nn.Parameter(torch.randn(1, hidden_dim2))
         self.video_modal_token = nn.Parameter(torch.randn(1, hidden_dim2))
-        self.question_modal_token = nn.Parameter(torch.randn(1, hidden_dim2))
+        # self.question_modal_token = nn.Parameter(torch.randn(1, hidden_dim2))
 
         cls_token_id = tokenizer.cls_token_id
         cls_token = model.embeddings.word_embeddings(torch.tensor(cls_token_id).to('cuda'))  # shape: [1, hidden_dim]
@@ -116,18 +116,18 @@ class MyModel(nn.Module):
         z_v = nn.ReLU()(z_v)
         z_t = self.text_projection(t)
         z_t = nn.ReLU()(z_t)
-        z_q = self.question_projection(q)
-        z_q = nn.ReLU()(z_q)
+        # z_q = self.question_projection(q)
+        # z_q = nn.ReLU()(z_q)
 
         z_a = self.pos_encoder(z_a)
         z_v = self.pos_encoder(z_v)
         z_t = self.pos_encoder(z_t)
-        z_q = self.pos_encoder(z_q)
+        # z_q = self.pos_encoder(z_q)
 
         z_a = z_a + self.audio_modal_token
         z_v = z_v + self.video_modal_token
         z_t = z_t + self.text_modal_token
-        z_q = z_q + self.question_modal_token
+        # z_q = z_q + self.question_modal_token
 
         z = torch.cat((z_q, z_t, z_a, z_v), dim=1)  # Concatenate along the sequence dimension
 
