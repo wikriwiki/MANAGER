@@ -51,11 +51,11 @@ def train_batch(model:MyModel, loader:DataLoader, epochs, optimizer, criterion, 
     for epoch in tqdm(range(epochs),desc="Training"):
         total_loss = 0
         model.train()
-        for n, (t_emb,a_emb,v_emb,q_emb,label) in enumerate(loader):
-            t_emb,a_emb,v_emb,q_emb,label = t_emb.to(device), a_emb.to(device), v_emb.to(device), q_emb.to(device), label.to(device)
+        for n, (t_emb,a_emb,v_emb,label) in enumerate(loader):
+            t_emb,a_emb,v_emb,label = t_emb.to(device), a_emb.to(device), v_emb.to(device), label.to(device)
             # print(t_emb.shape, a_emb.shape, v_emb.shape, q_emb.shape, label.shape)
             optimizer.zero_grad()
-            out = model(a_emb, v_emb, t_emb, q_emb) #batch.edge_index,batch.batch, batch.question)
+            out = model(a_emb, v_emb, t_emb) #batch.edge_index,batch.batch, batch.question)
             loss = criterion(out.squeeze(), label.squeeze().float())
             loss.backward()
             optimizer.step()
@@ -70,9 +70,9 @@ def train_batch(model:MyModel, loader:DataLoader, epochs, optimizer, criterion, 
         with torch.no_grad():
             all_labels = []
             all_preds = []
-            for n, (t_emb,a_emb,v_emb,q_emb,label) in enumerate(loader):
-                t_emb,a_emb,v_emb,q_emb,label = t_emb.to(device), a_emb.to(device), v_emb.to(device), q_emb.to(device), label.to(device)
-                out = model(a_emb, v_emb, t_emb, q_emb)
+            for n, (t_emb,a_emb,v_emb,label) in enumerate(loader):
+                t_emb,a_emb,v_emb,label = t_emb.to(device), a_emb.to(device), v_emb.to(device), label.to(device)
+                out = model(a_emb, v_emb, t_emb)
                 preds = torch.sigmoid(out).squeeze().cpu().numpy()
                 preds = [1 if preds > 0.5 else 0]
                 all_labels.extend(label.cpu().numpy())
