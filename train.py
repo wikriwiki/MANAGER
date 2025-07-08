@@ -1,149 +1,119 @@
+# train.py
+import argparse, math, os, random, time
+from pathlib import Path
+
 import torch
-from data import DataLoader_Graph as MyDataLoader
 from torch.utils.data import DataLoader
-from torch_geometric.loader import DataLoader as PyGLoader
-from tqdm import tqdm
-from model import MANAGER, MyModel
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
-import bitsandbytes as bnb
+from torch.cuda.amp import autocast, GradScaler
+from tqdm.auto import tqdm
 
-annotation_path = "data/data_annotation_balanced_train.csv" #"data_annotation_label.csv"
-batch_size = 1
-shuffle = True                                                      
-learning_rate = 0.001
-epochs = 10
+from data.person_dataset import VideoPersonDataset
+from models.manager_graphtokens import GraphTokenManager   # 방금 만든 모델
 
-def train_chatglm(model, loader, epochs, optimizer, device, file_name):
-    # for p in model.chatglm.parameters():
-    #     p.requires_grad = False
-    # model.chatglm.eval()
+# ──────────────────────────
+def seed_all(seed: int):
+    random.seed(seed);  torch.manual_seed(seed);  torch.cuda.manual_seed_all(seed)
+
+# ──────────────────────────
+def get_dataloaders(db, cache, frames, wav, batch=1, max_samples=None, seed=42):
+    train_ds = VideoPersonDataset(
+        db_path=db, split="train",
+        cache_dir=cache, video_root=frames, audio_root=wav,
+        merge_dialog=True, max_samples=max_samples, seed=seed
+    )
+    val_ds   = VideoPersonDataset(
+        db_path=db, split="val",
+        cache_dir=cache, video_root=frames, audio_root=wav,
+        merge_dialog=True, max_samples=max_samples, seed=seed
+    )
+    train_loader = DataLoader(train_ds, batch_size=batch, shuffle=True)
+    val_loader   = DataLoader(val_ds, batch_size=1, shuffle=False)
+    return train_loader, val_loader
+
+# ──────────────────────────
+def evaluate(model, loader, device):
+    model.eval();  tp=fp=fn=0
+    with torch.no_grad():
+        for sample in loader:
+            g   = sample["graph"].to(device)
+            logit,_ = model(g, sample["person"][0])
+            pred = (torch.sigmoid(logit) > 0.5).item()
+            label= sample["label"].item()
+            if pred==1 and label==1: tp+=1
+            if pred==1 and label==0: fp+=1
+            if pred==0 and label==1: fn+=1
+    precision = tp / (tp+fp+1e-8)
+    recall    = tp / (tp+fn+1e-8)
+    f1        = 2*precision*recall/(precision+recall+1e-8)
+    return f1
+
+# ──────────────────────────
+def main(args):
+    seed_all(args.seed)
+    device = torch.device("cuda")
+
+    # Data
+    train_loader, val_loader = get_dataloaders(
+        db=args.db, cache=args.cache, frames=args.frames, wav=args.wav,
+        batch=1, max_samples=args.max_samples, seed=args.seed
+    )
+
+    # Model
+    model = GraphTokenManager().half().to(device)
     model.train()
-    loss_history = []
-    for epoch in tqdm(range(epochs),desc="Training"):
-        total_loss = 0
-        for step, (emb, edge_index, question, answer) in enumerate(loader):
-            query = "Does the Graph Context affect the answer to the following question?\n\n"+question[0]
-            loss = model.compute_loss(
-                query=query,
-                answer=answer[0],
-                src=emb[0].to(device),
-                edge_index=edge_index[0].to(device)
-            )
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
-            
-            total_loss += loss.item()
-            if step % 100 == 0:
-                print(f"Epoch {epoch} Step {step} - Loss: {loss.item():.4f}")
-                loss_history.append(loss.item())
 
-        avg_loss = total_loss / len(loader)
-        print(f"Epoch {epoch} Completed - Avg Loss: {avg_loss:.4f}")
-        torch.save(model.state_dict(), file_name)
-        # loss_history.append(avg_loss)
-    
-    return loss_history
-    
-def train_batch(model:MyModel, loader:DataLoader, epochs, optimizer, criterion, device):
-    
-    loss_history = []
-    for epoch in tqdm(range(epochs),desc="Training"):
-        total_loss = 0
+    # Optimizer (8-bit AdamW)
+    optim = torch.optim.AdamW(
+        model.parameters(), lr=args.lr, betas=(0.9,0.95), eps=1e-8
+    )
+    scaler = GradScaler()
+
+    best_f1 = 0.0
+    ckpt_dir = Path(args.ckpt_dir); ckpt_dir.mkdir(exist_ok=True)
+
+    for epoch in range(1, args.epochs+1):
         model.train()
-        for n, (t_emb,a_emb,v_emb,label) in enumerate(loader):
-            t_emb,a_emb,v_emb,label = t_emb.to(device), a_emb.to(device), v_emb.to(device), label.to(device)
-            # print(t_emb.shape, a_emb.shape, v_emb.shape, q_emb.shape, label.shape)
-            optimizer.zero_grad()
-            out = model(a_emb, v_emb, t_emb) #batch.edge_index,batch.batch, batch.question)
-            loss = criterion(out.squeeze(), label.squeeze().float())
-            loss.backward()
-            optimizer.step()
-            total_loss += loss.item()
-        
-        avg_loss = total_loss / len(loader.dataset)
-        loss_history.append(avg_loss)
+        pbar = tqdm(train_loader, desc=f"Epoch {epoch}")
+        for sample in pbar:
+            g   = sample["graph"].to(device)
+            lbl = sample["label"].float().unsqueeze(0).to(device)
 
-        print(f"{epoch+1}/{epochs} Avg. Loss: {avg_loss}")
+            optim.zero_grad()
+            with autocast():
+                logit, loss = model(g, sample["person"][0], lbl)
+            scaler.scale(loss).backward()
+            scaler.unscale_(optim)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            scaler.step(optim); scaler.update()
 
-        model.eval()
-        with torch.no_grad():
-            all_labels = []
-            all_preds = []
-            for n, (t_emb,a_emb,v_emb,label) in enumerate(loader):
-                t_emb,a_emb,v_emb,label = t_emb.to(device), a_emb.to(device), v_emb.to(device), label.to(device)
-                out = model(a_emb, v_emb, t_emb)
-                preds = torch.sigmoid(out).squeeze().cpu().numpy()
-                preds = [1 if preds > 0.5 else 0]
-                all_labels.extend(label.cpu().numpy())
-                all_preds.extend(preds)
+            pbar.set_postfix(loss=loss.item())
 
-            acc = accuracy_score(all_labels, all_preds)
-            f1 = f1_score(all_labels, all_preds)
-            precision = precision_score(all_labels, all_preds)
-            recall = recall_score(all_labels, all_preds)
+        # ── validation ──
+        f1 = evaluate(model, val_loader, device)
+        print(f"epoch {epoch}  val F1={f1:.4f}")
 
-            print(f"Accuracy: {acc}, F1: {f1}, Precision: {precision}, Recall: {recall}")
+        if f1 > best_f1:
+            best_f1 = f1
+            torch.save({
+                "gcn" : model.gcn.state_dict(),
+                "proj": model.proj_up.state_dict(),
+                "lora": model.glm.state_dict(),      # LoRA adapter
+                "optim": optim.state_dict(),
+            }, ckpt_dir / "best.pt")
+            print(f"  ✔ saved new best checkpoint (F1 {best_f1:.4f})")
 
-        torch.save(model.state_dict(), "model.pth")
-    
-    return loss_history
-
+# ──────────────────────────
 if __name__ == "__main__":
-    # Example usage
-    input_dim = 768
-    hidden_dim1 =768
-    hidden_dim2 = 768
-    output_dim = 1
-    num_encoder_layers = 24
-    dropout_p = 0.25
-
-    pos_weight = torch.tensor(0.192)
-
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    # model = MyModel(input_dim, hidden_dim1, hidden_dim2).to(device)   #.half()
-
-    # # import time
-    # # time.sleep(30)
-
-    # # exit()
-
-    # myData = MyDataLoader(annotation_path)
-    # loader = DataLoader(myData, batch_size=batch_size, shuffle=True)
-    
-    # # data = myData() # Data object(x=emb, edge_index=graph, y=label)
-
-    # optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
-    # criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight).to(device)
-
-    # avg_loss = train_batch(model, loader, epochs, optimizer, criterion, device)
-    # print("Average Loss:", avg_loss)
-
-    # torch.save(model.state_dict(), "model.pth")
-    
-    # "meta-llama/Llama-3.2-1B" 2048
-    # "Qwen/Qwen2.5-1.5B" 1536
-    
-    model_name = "Qwen/Qwen2.5-1.5B-Instruct"
-    file_name = "manager_qwen1.5B_Instruct.pth"
-    model = MANAGER(model_name, 768,768,1536,device)
-    
-    dataset = MyDataLoader(annotation_path)
-    dataloader = DataLoader(dataset,1,False)
-    
-    llm_params = list(model.chatglm.parameters())
-    gcn_params = list(model.conv1.parameters()) + list(model.conv2.parameters()) +list(model.linear.parameters())
-
-    # optimizer = torch.optim.AdamW([
-    #     {"params": gcn_params, "lr": 1e-4},
-    # ], weight_decay=0.01)
-    
-    optimizer = bnb.optim.AdamW8bit([
-        {"params": gcn_params, "lr": 1e-4},
-        {"params": llm_params, "lr": 2e-5},
-    ], weight_decay=0.01)
-    
-    avg_loss = train_chatglm(model,dataloader,3,optimizer,device,file_name)
-    
-    print("Average Loss:", avg_loss)
-    
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--db",          default="data/monopoly.sqlite")
+    ap.add_argument("--cache",       default="cache/")
+    ap.add_argument("--frames",      default="data/frames/")
+    ap.add_argument("--wav",         default="data/wav/")
+    ap.add_argument("--ckpt_dir",    default="checkpoints/")
+    ap.add_argument("--epochs", type=int, default=3)
+    ap.add_argument("--lr",     type=float, default=2e-4)
+    ap.add_argument("--seed",   type=int,   default=42)
+    ap.add_argument("--max_samples", type=int, default=None,
+                    help="for quick debugging; use None for full data")
+    args = ap.parse_args()
+    main(args)

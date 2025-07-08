@@ -1,1 +1,4 @@
 .env
+data/speech_segments.db
+data/wikidata_revisions.db
+FinDKG_dataset/

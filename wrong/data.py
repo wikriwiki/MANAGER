@@ -12,7 +12,7 @@ class DataLoader_Graph(Dataset):
         self.df = pd.read_csv(annotation_path)
         self.emb_file = self.df['emb_file']
         self.graph_file = self.df['graph_file']
-        self.question = self.df['matching_questions']
+        # self.question = self.df['matching_questions']
         self.label = self.df['threshold_label']
         
     def __len__(self):
@@ -21,10 +21,10 @@ class DataLoader_Graph(Dataset):
     def __getitem__(self, idx):
         emb = torch.load(self.emb_file[idx])
         graph = torch.load(self.graph_file[idx], weights_only=False).edge_index
-        question = self.question[idx]
+        # question = self.question[idx]
         answer = self.label[idx]
         
-        return emb, graph, question, answer
+        return emb, graph, answer
     
 class DataLoader(Dataset):
     def __init__(self, annotation_path):
@@ -33,7 +33,7 @@ class DataLoader(Dataset):
         self.text_emb_file = self.df['text_file']
         self.audio_emb_file = self.df['audio_file']
         self.video_emb_file = self.df['video_file']
-        self.question_emb_file = self.df['question_file']
+        # self.question_emb_file = self.df['question_file']
         self.label = self.df['threshold_label']
         self.y = self.label.values
         self.data = None
@@ -51,7 +51,7 @@ class DataLoader(Dataset):
         t_emb = torch.load(self.text_emb_file[idx])
         a_emb = torch.load(self.audio_emb_file[idx]).float()
         v_emb = torch.load(self.video_emb_file[idx])
-        q_emb = torch.load(self.question_emb_file[idx])
+        # q_emb = torch.load(self.question_emb_file[idx])
         # v_emb = torch.load(row['video_file'])
         # t_emb = torch.load(row['text_file'])
         # q_emb = torch.load(row['question_file'])
@@ -67,7 +67,7 @@ class DataLoader(Dataset):
         #     "label": label
         # }
 
-        return t_emb,a_emb,v_emb,q_emb,label
+        return t_emb,a_emb,v_emb,label
 
     # def __call__(self):
     #     self.data = []

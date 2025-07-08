@@ -313,7 +313,7 @@ if __name__ == "__main__":
 
     title_list = []
     url_list = []
-    question_list = []
+    # question_list = []
     emb_file_list = []
     graph_file_list = []
 
@@ -323,12 +323,12 @@ if __name__ == "__main__":
     for i in tqdm(range(len(df_samples)),desc="Data Processing"):
         url = df_samples.iloc[i]['url']
         title = df_samples.iloc[i]['title']
-        question = df_samples.iloc[i]['matching_questions']
+        # question = df_samples.iloc[i]['matching_questions']
 
         if prev_url != None and prev_url == url:
             title_list.append(title)
             url_list.append(url)
-            question_list.append(question)
+            # question_list.append(question)
             emb_file_list.append(f"data/embedding/emb_{prev_i+1:04d}.pt")
             graph_file_list.append(f"data/graph/graph_{prev_i+1:04d}.pt")
             continue
@@ -362,7 +362,7 @@ if __name__ == "__main__":
         graph_file_list.append(f"data/graph/graph_{i+1:04d}.pt")
         title_list.append(title)
         url_list.append(url)
-        question_list.append(question)
+        # question_list.append(question)
 
         prev_url = url
         prev_i = i
@@ -371,7 +371,7 @@ if __name__ == "__main__":
     dfdf = {
         "title":title_list,
         "url":url_list,
-        "question":question_list,
+        # "question":question_list,
         "emb_file":emb_file_list,
         "graph_file":graph_file_list
     }
