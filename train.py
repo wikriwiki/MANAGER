@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 from torch.cuda.amp import autocast, GradScaler
 from tqdm.auto import tqdm
 
-from data.person_dataset import VideoPersonDataset
+from dataset.data import VideoPersonDataset
 from models.manager_graphtokens import GraphTokenManager   # 방금 만든 모델
 
 # ──────────────────────────
@@ -105,12 +105,12 @@ def main(args):
 # ──────────────────────────
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--db",          default="data/monopoly.sqlite")
+    ap.add_argument("--db",          default="data/speech_segments.db")
     ap.add_argument("--cache",       default="cache/")
     ap.add_argument("--frames",      default="data/frames/")
     ap.add_argument("--wav",         default="data/wav/")
     ap.add_argument("--ckpt_dir",    default="checkpoints/")
-    ap.add_argument("--epochs", type=int, default=3)
+    ap.add_argument("--epochs", type=int, default=5)
     ap.add_argument("--lr",     type=float, default=2e-4)
     ap.add_argument("--seed",   type=int,   default=42)
     ap.add_argument("--max_samples", type=int, default=None,

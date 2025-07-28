@@ -13,9 +13,8 @@ from models.encoder import (
     VideoFeatureExtractor,
     AudioFeatureExtractor,
 )
-from models.graph_builder import GraphBuilder, merge_graph
-
-
+from models.graph_builder import GraphBuilder
+from models.graph_utils import merge_graph
 class VideoPersonDataset(Dataset):
     """
     영상  인물 페어 → {graph, person, label} 을 반환하는 Dataset.
@@ -162,12 +161,13 @@ class VideoPersonDataset(Dataset):
             "graph" : graph_final,
             "person": person,
             "label" : label,      # 0/1 (검색량 이상치 유무)
+            "video_id": video_id   # video_id 추가
         }
 
 #사용예시
 if __name__ == "__main__":
     from torch.utils.data import DataLoader
-    from data.person_dataset import VideoPersonDataset
+    from dataset.data import VideoPersonDataset
 
     train_ds = VideoPersonDataset(
         db_path="data/monopoly.sqlite",

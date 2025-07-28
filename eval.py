@@ -13,13 +13,14 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
-from data.person_dataset import VideoPersonDataset
+from dataset.data import VideoPersonDataset
 from models.manager_graphtokens import GraphTokenManager
 
 # ────────────────────────────────────────────────
 @torch.no_grad()
 def run_test(loader, model, device, out_csv: Path):
     model.eval()
+    individual_predictions = []
     y_true, y_pred, y_prob = [], [], []
 
     with out_csv.open("w", newline="") as f:
@@ -32,13 +33,15 @@ def run_test(loader, model, device, out_csv: Path):
             prob = torch.sigmoid(logit).item()
             pred = int(prob > 0.5)
             label= int(sample["label"].item())
+            video_id = sample["video_id"]
+            person_name = sample["person"] # sample["person"][0]은 아마 배치처리 시 문자열 리스트일 경우
 
             writer.writerow([
                 sample["graph"].node_meta.get("video_id","NA"),  # ← GraphBuilder에 video_id 넣었다면
                 sample["person"][0],
                 label, pred, prob
             ])
-
+            individual_predictions.append((video_id, person_name, label, pred, prob))
             y_true.append(label)
             y_pred.append(pred)
             y_prob.append(prob)
@@ -47,7 +50,8 @@ def run_test(loader, model, device, out_csv: Path):
         y_true, y_pred, average="binary", zero_division=0
     )
     roc = roc_auc_score(y_true, y_prob)
-    return {"precision": p, "recall": r, "f1": f1, "roc_auc": roc}
+    return {"precision": p, "recall": r, "f1": f1, "roc_auc": roc}, individual_predictions
+
 
 # ────────────────────────────────────────────────
 def load_ckpt(model, ckpt_path):
@@ -76,7 +80,7 @@ def main(args):
 
     # Run evaluation
     out_csv = Path(args.output_csv)
-    metrics = run_test(test_loader, model, device, out_csv)
+    metrics, _ = run_test(test_loader, model, device, out_csv) 
     print(json.dumps(metrics, indent=2))
 
     # save metrics JSON

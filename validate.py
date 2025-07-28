@@ -4,7 +4,7 @@ from pathlib import Path
 from tqdm.auto import tqdm
 from sklearn.metrics import precision_recall_fscore_support
 
-from data.person_dataset import VideoPersonDataset
+from dataset.data import VideoPersonDataset
 from models.manager_graphtokens import GraphTokenManager
 
 # ────────────────────────────────────────────────
