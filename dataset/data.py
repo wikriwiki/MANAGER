@@ -170,7 +170,7 @@ if __name__ == "__main__":
     from dataset.data import VideoPersonDataset
 
     train_ds = VideoPersonDataset(
-        db_path="data/monopoly.sqlite",
+        db_path="data/speech_segments.db",
         split="train",
         cache_dir="cache/",
         video_root="frames/",

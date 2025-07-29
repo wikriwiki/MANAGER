@@ -5,7 +5,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
-
+import argparse
 def get_git_commit_hash() -> Optional[str]:
     """현재 Git 커밋 해시를 가져옵니다."""
     try:
@@ -36,7 +36,7 @@ def init_experiment_db(db_path: str = "experiments.db") -> sqlite3.Connection:
             epochs INTEGER,
             learning_rate REAL,
             random_seed INTEGER,
-            # 전체 성능 지표 (val 및 test)
+            max_samples INTEGER,                      
             val_f1 REAL,
             val_precision REAL,
             val_recall REAL,

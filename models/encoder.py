@@ -21,7 +21,6 @@ from PIL import Image
 from torch_geometric.data import Data
 from transformers import (
     AutoTokenizer,
-    AutoTokenizerFast,
     AutoModelForCausalLM,
     BitsAndBytesConfig,
     BertTokenizerFast,
@@ -140,8 +139,8 @@ class TextFeatureExtractor:
     def __init__(self):
         self.wp_tok = BertTokenizerFast.from_pretrained("bert-base-uncased")
         try:
-            self.glm_tok: AutoTokenizerFast = AutoTokenizerFast.from_pretrained(
-                "THUDM/chatglm2-6b", trust_remote_code=True)
+            self.glm_tok: AutoTokenizer = AutoTokenizer.from_pretrained(
+                "THUDM/chatglm2-6b", trust_remote_code=True, use_fast=True)
             self.fast_offset = True
         except ValueError:
             self.glm_tok = AutoTokenizer.from_pretrained("THUDM/chatglm2-6b",
