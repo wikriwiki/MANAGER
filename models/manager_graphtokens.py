@@ -2,7 +2,7 @@
 import torch
 import torch.nn as nn
 from torch_geometric.data import Data
-from transformers import AutoTokenizer, AutoModel
+from transformers import AutoTokenizer, AutoModel, BitsAndBytesConfig
 from peft import LoraConfig, get_peft_model
 
 from models.gcn import RGCNEncoder
@@ -41,17 +41,22 @@ class GraphTokenManager(nn.Module):
         self.tokenizer = AutoTokenizer.from_pretrained(
             glm_ckpt, trust_remote_code=True
         )
+        
+        # 8-bit 양자화 방식을 최신 API로 변경
+        quantization_config = BitsAndBytesConfig(load_in_8bit=True)
         self.glm = AutoModel.from_pretrained(
             glm_ckpt,
             torch_dtype=torch.float16,
-            load_in_8bit=True,
+            quantization_config=quantization_config,
             trust_remote_code=True,
         )
+        
+        # LoRA 타겟 모듈을 chatglm2-6b에 맞게 변경
         lora_cfg = LoraConfig(
             r=lora_r,
             lora_alpha=lora_alpha,
             lora_dropout=lora_dropout,
-            target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+            target_modules=["query_key_value"],
         )
         self.glm = get_peft_model(self.glm, lora_cfg)
 
@@ -93,6 +98,7 @@ class GraphTokenManager(nn.Module):
         out = self.glm(inputs_embeds=inputs_embeds,
                        attention_mask=attn_mask,
                        output_hidden_states=True)
+        
         # prefix: 그래프 첫 토큰은 prompt 뒤 첫 위치 = index prompt_len
         graph_start_idx = prompt_emb.size(1)
         # 평균 풀링으로 그래프 구간 요약 (4096d)
