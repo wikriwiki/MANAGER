@@ -26,32 +26,32 @@ class GraphTokenManager(nn.Module):
         lora_dropout: float = 0.05,
     ):
         super().__init__()
+        # 모델 레이어들을 올릴 장치를 정의합니다.
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        # R-GCN (노드 768 → 768)
+        # R-GCN 레이어를 device로 이동
         self.gcn = RGCNEncoder(
             in_dim=768,
             num_rel=len(EDGE_TYPE),
             num_layers=gcn_layers,
-        )
+        ).to(device)
 
-        # 768 → 4096 projection (각 노드별)
-        self.proj_up = nn.Linear(768, 4096, bias=False)
+        # 프로젝션 레이어를 device로 이동
+        self.proj_up = nn.Linear(768, 4096, bias=False).to(device)
 
         # ChatGLM2 (8-bit) + LoRA
+        # 이 부분은 양자화와 함께 자동으로 최적의 device에 배치되므로 .to(device)를 사용하지 않습니다.
         self.tokenizer = AutoTokenizer.from_pretrained(
             glm_ckpt, trust_remote_code=True
         )
-        
-        # 8-bit 양자화 방식을 최신 API로 변경
         quantization_config = BitsAndBytesConfig(load_in_8bit=True)
         self.glm = AutoModel.from_pretrained(
             glm_ckpt,
             torch_dtype=torch.float16,
             quantization_config=quantization_config,
             trust_remote_code=True,
+            device_map="auto",
         )
-        
-        # LoRA 타겟 모듈을 chatglm2-6b에 맞게 변경
         lora_cfg = LoraConfig(
             r=lora_r,
             lora_alpha=lora_alpha,
@@ -60,8 +60,8 @@ class GraphTokenManager(nn.Module):
         )
         self.glm = get_peft_model(self.glm, lora_cfg)
 
-        # 4096 → 1 로짓 (sigmoid 는 BCEWithLogitsLoss 내부 처리)
-        self.cls_head = nn.Linear(4096, 1)
+        # 분류 헤드를 device로 이동
+        self.cls_head = nn.Linear(4096, 1).to(device)
 
     # ────────────────────────────────────────────────────────
     def forward(

@@ -168,45 +168,33 @@ class TextFeatureExtractor:
             off.append((j, j + len(tc))); p = j + len(tc)
         return off
 
-    # models/encoder.py
-
     @torch.no_grad()
     def encode(self, utterance_text: str, **_):
-        """
-        BERT(wp), GLM 토크나이저로 각각 토큰화 후 임베딩.
-        GLM의 4096-d 임베딩을 BERT의 768-d로 맞춰서 리턴.
-        """
-        device = self.proj_down.weight.device
-
-        # 1. BERT 토크나이저 (기존과 동일)
         wp = self.wp_tok(utterance_text, return_offsets_mapping=True,
                          add_special_tokens=False)
         wp_offsets = wp["offset_mapping"]
 
-        # 2. GLM 토크나이저 (문제가 되는 부분을 수동으로 처리)
-        # 2-1. 문제가 되는 고수준 __call__ 대신, 가장 기본적인 .encode() 사용
-        glm_input_ids = self.glm_tok.encode(utterance_text, add_special_tokens=False)
-
-        # 2-2. 수동으로 PyTorch 텐서 생성
-        glm_enc = {
-            "input_ids": torch.tensor([glm_input_ids], device=device),
-            "attention_mask": torch.ones(1, len(glm_input_ids), device=device, dtype=torch.long)
-        }
-        
-        # 2-3. 나머지 로직은 기존과 동일
+        glm_enc = self.glm_tok(utterance_text, add_special_tokens=False,
+                               return_tensors="pt").to(device)
         glm_ids = glm_enc["input_ids"][0].tolist()
         glm_toks = self.glm_tok.convert_ids_to_tokens(glm_ids)
 
-        # GLM forward & projection
-        glm_hs = self.glm(**glm_enc).hidden_states[-1]
-        glm_emb = self.proj_down(glm_hs).squeeze(0)
+        if self.fast_offset:
+            glm_offsets = self.glm_tok(utterance_text, add_special_tokens=False,
+                                       return_offsets_mapping=True)["offset_mapping"]
+        else:
+            glm_offsets = self._manual_offsets(utterance_text, glm_toks)
 
-        meta = {
-            "wp_offsets": wp_offsets,
-            "wp_tokens": self.wp_tok.convert_ids_to_tokens(wp['input_ids']),
-            "glm_tokens": glm_toks,
-        }
-        return glm_emb, meta
+        hidden4096 = self.glm(**glm_enc).hidden_states[-1][0]    # [L,4096]
+        hid768 = self.norm(self.proj_down(hidden4096))           # [L,768]
+
+        map_wp2glm = build_cross_map(wp_offsets, glm_offsets)
+        wp_emb = torch.stack([
+            hid768[idxs].mean(0) if idxs else torch.zeros(768, device=device)
+            for idxs in map_wp2glm
+        ])
+        return wp_emb, {"wp_tokens": self.wp_tok.convert_ids_to_tokens(wp["input_ids"]),
+                        "glm_tokens": glm_toks, "map_wp2glm": map_wp2glm}
 
 # ════════════════════════════════════════════════════════════════════
 #  Video Feature Extractor – Temporal Attention
