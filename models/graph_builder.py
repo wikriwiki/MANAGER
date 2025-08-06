@@ -59,7 +59,12 @@ class GraphBuilder:
         self.merge_anchor = merge_anchor
         self.text_enc = TextFeatureExtractor()
         self.ekm = ExternalFinancialKnowledgeModel()
-
+    def __del__(self):
+        """GraphBuilder가 소멸될 때 TextFeatureExtractor 정리"""
+        if hasattr(self, 'text_enc'):
+            self.text_enc.cleanup()
+            del self.text_enc
+        print("GraphBuilder 메모리 해제 완료")
     # ---------------- PID → label ----------------------------
     def _triple_to_string(self, subj: str, pid: str, obj: str) -> str:
         if not hasattr(self, "_pid_cache"):
@@ -79,6 +84,10 @@ class GraphBuilder:
         audio_emb: torch.Tensor | None = None,  # [1,768]
     ) -> Data:
         """발화(텍스트+모달) → PyG Data (모든 엣지 양방향)"""
+        if video_emb is not None and video_emb.is_cuda:
+            video_emb = video_emb.cpu()
+        if audio_emb is not None and audio_emb.is_cuda:
+           audio_emb = audio_emb.cpu()
         # 1) 외부 지식 트리플 수집
         ent_ids, ek_sub = self.ekm.acquire_related_external_knowledge(
             utterance_text, self.time_iso
@@ -100,6 +109,8 @@ class GraphBuilder:
             knowledge_triples=[self._triple_to_string(*t) for t in triples],
             anchor_entities=[self.ekm.int2qid[i] for i in ent_ids],
         )
+        if wp_emb.is_cuda:
+            wp_emb = wp_emb.cpu()
         hs = wp_emb  # [N,768]
         D = hs.size(1)
         sep0 = meta["sep"][0]
@@ -151,6 +162,7 @@ class GraphBuilder:
             a_idx = -1
 
         # -------------------- Tensor 변환 ------------------------------
+       
         x = torch.stack(node_feats) if node_feats else torch.empty(0, D)
         edge_index = (
             torch.tensor([edge_src, edge_dst], dtype=torch.long)

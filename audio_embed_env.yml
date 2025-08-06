@@ -1,0 +1,28 @@
+name: audio_embed
+channels:
+  - nvidia             # CUDA run-time
+  - pytorch            # PyTorch + torchaudio
+  - conda-forge        # 과학 생태계
+  - defaults
+dependencies:
+  # ── core ────────────────────────────────────────
+  - python=3.10
+  - pytorch=2.3.0
+  - pytorch-cuda=12.1          # libcublas 12.1.*
+  - numpy=1.26.4
+  - numba=0.59.1
+  # ── audio stack ─────────────────────────────────
+  - librosa=0.10.1
+  - pysoundfile=0.13.1         # ← conda 패키지명
+  - scipy=1.15.3
+  - cffi                       # soundfile 의존
+  # ── misc ────────────────────────────────────────
+  - tqdm
+  - pillow
+  - scikit-learn
+  - pip
+  - pip:
+      - soxr==0.5.0.post1      # ← PyPI 패키지
+      - tokenizers==0.19.1
+      - transformers==4.44.2
+      - accelerate==0.29.3

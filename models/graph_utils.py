@@ -50,25 +50,30 @@ def _add_bidir(ei: List[List[int]], ety: List[int], src: int, dst: int, etype: i
     ei[1].extend([dst, src])
     ety.extend([etype, etype])
 
-
 # ---------------------------------------------------------------------------
 # public merge util
 # ---------------------------------------------------------------------------
 
 def merge_graph(prev: Data, new: Data) -> Data:
     """두 발화 그래프를 **양방향** 모달(time) 엣지로 연결 후 하나로 합친다."""
+    # ── DEVICE HARMONIZATION ─────────────────────────────────
+    # prev, new에 GPU 텐서가 남아 있을 수 있으므로, CPU로 강제 이동
+    prev = prev.to("cpu")
+    new = new.to("cpu")
+
+    # 1) offset 적용된 new 서브그래프 생성
     offset = prev.num_nodes
     new_s = _shift_graph(new, offset)
 
-    # 1) 노드 concat
+    # 2) 노드 concat
     x = torch.cat([prev.x, new_s.x], dim=0)
 
-    # 2) 엣지 concat (리스트 → 나중에 tensor)
+    # 3) 엣지 concat (리스트 → 나중에 tensor)
     ei0: List[int] = prev.edge_index[0].tolist() + new_s.edge_index[0].tolist()
     ei1: List[int] = prev.edge_index[1].tolist() + new_s.edge_index[1].tolist()
     ety: List[int] = prev.edge_type.tolist() + new_s.edge_type.tolist()
 
-    # 3) 시간 엣지 (양방향)
+    # 4) 시간 엣지 (양방향)
     first_t_prev, last_t_prev, v_prev, a_prev = _indices(prev, 0)
     first_t_new, last_t_new, v_new, a_new = _indices(new_s, offset)
 
@@ -83,7 +88,7 @@ def merge_graph(prev: Data, new: Data) -> Data:
     if a_prev != -1 and a_new != -1:
         _add_bidir([ei0, ei1], ety, a_prev, a_new, EDGE_TYPE["a_a"])
 
-    # 4) node_meta 합산 (단순 카운트 합)
+    # 5) node_meta 합산 (단순 카운트 합)
     meta = {
         k: prev.node_meta.get(k, 0) + new.node_meta.get(k, 0)
         for k in set(prev.node_meta) | set(new.node_meta)
