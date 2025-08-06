@@ -4,3 +4,4 @@ data/wikidata_revisions.db
 FinDKG_dataset/
 models/__pycache__
 __pycache__
+cache
