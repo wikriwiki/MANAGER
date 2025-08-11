@@ -1,47 +1,56 @@
-#!/usr/bin/env python3
-"""
-move_old_audio_pt.py
-────────────────────────────────────────────────────────────────
-speech_segments.db의 segment_id → aud::<segment_id> 해시를 계산해
-<cache>  아래의  *.pt 중 **오디오 임베딩**만  <cache>/error 로 옮긴다.
-
-Usage
------
-python move_old_audio_pt.py --cache ./cache --db data/speech_segments.db
-"""
-
-from __future__ import annotations
-import hashlib, sqlite3, shutil, argparse
+import torch
 from pathlib import Path
-from tqdm import tqdm
+from tqdm.auto import tqdm
+from torch_geometric.data import Data # 그래프 객체인지 확인하기 위해 임포트
 
-def hash_aud(seg_id: str) -> str:
-    return hashlib.md5(f"aud::{seg_id}".encode()).hexdigest() + ".pt"
+def validate_graph_cache():
+    """
+    캐시 디렉토리 내의 .pt 파일 중 그래프 데이터 객체만을 대상으로
+    유효성을 검사하여 손상된 파일을 찾아냅니다.
+    """
+    cache_dir = Path("cache/")
+    if not cache_dir.exists():
+        print(f"오류: 캐시 디렉토리 '{cache_dir}'를 찾을 수 없습니다.")
+        return
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--cache", default="./cache")
-    ap.add_argument("--db",    default="data/speech_segments.db")
-    args = ap.parse_args()
+    corrupted_files = []
+    print(f"'{cache_dir}' 디렉토리에서 그래프 캐시 파일을 검사합니다...")
 
-    cache = Path(args.cache)
-    error_dir = cache / "error"
-    error_dir.mkdir(exist_ok=True)
+    # 캐시 디렉토리의 모든 .pt 파일을 순회합니다.
+    file_list = list(cache_dir.glob("*.pt"))
+    for f_path in tqdm(file_list, desc="Validating cache files"):
+        try:
+            data = torch.load(f_path, map_location="cpu", weights_only=False)
 
-    # ── DB에서 모든 segment_id 읽기 ─────────────────────────────
-    conn = sqlite3.connect(args.db); conn.row_factory = sqlite3.Row
-    seg_ids = [r["segment_id"] for r in
-               conn.execute("SELECT segment_id FROM speech_segments")]
-    conn.close()
+            # --- [핵심 수정] 로드한 데이터가 그래프 객체인지 먼저 확인 ---
+            if isinstance(data, Data):
+                # 그래프 객체인 경우에만 유효성 검사를 수행합니다.
+                if data.num_nodes > 0 and data.num_edges > 0:
+                    if data.edge_index.max().item() >= data.num_nodes:
+                        # 엣지가 존재하지 않는 노드를 가리키는 경우
+                        corrupted_files.append({
+                            "path": str(f_path),
+                            "reason": f"Edge index ({data.edge_index.max().item()}) is out of bounds for {data.num_nodes} nodes."
+                        })
+            # else:
+            #   그래프 객체가 아닌 경우 (예: 텍스트, 비디오 임베딩 텐서)는 조용히 건너뜁니다.
 
-    moved = 0
-    for sid in tqdm(seg_ids, desc="Moving old audio pt"):
-        pt = cache / hash_aud(sid)
-        if pt.exists():
-            shutil.move(pt, error_dir / pt.name)
-            moved += 1
+        except Exception as e:
+            # 파일을 로드하는 과정 자체에서 오류가 발생한 경우
+            corrupted_files.append({
+                "path": str(f_path),
+                "reason": f"Failed to load file (Load Error: {e})"
+            })
 
-    print(f"✅  moved {moved:,} audio .pt files → {error_dir}")
+    if corrupted_files:
+        print(f"\n[오류] 총 {len(corrupted_files)}개의 손상된 그래프 파일을 찾았습니다:")
+        for f_info in corrupted_files:
+            print(f" - 파일: {f_info['path']}")
+            print(f"   원인: {f_info['reason']}")
+        print("\n[권장 조치] 손상된 캐시 파일을 삭제하거나, cache/ 디렉토리 전체를 삭제 후")
+        print("           'build_and_cache_graphs.py'를 다시 실행하여 모든 그래프를 재생성하세요.")
+    else:
+        print("\n[성공] 모든 그래프 캐시 파일이 정상입니다.")
 
 if __name__ == "__main__":
-    main()
+    validate_graph_cache()

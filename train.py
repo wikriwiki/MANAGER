@@ -152,6 +152,41 @@ from tqdm.auto import tqdm
 
 from dataset.data import VideoPersonDataset
 from models.manager_graphtokens import GraphTokenManager
+# ─── GPU 메모리 리포트 함수 추가 ───────────────────────────────
+import subprocess, textwrap, re, gc, torch
+
+def report_gpu_mem(tag=""):
+    """GPU별 alloc / reserved / 캐시 / peak 을 한눈에 표시"""
+    torch.cuda.synchronize()
+    print(f"\n=== GPU 메모리 리포트 {tag} ===")
+    for idx in range(torch.cuda.device_count()):
+        torch.cuda.set_device(idx)
+        alloc    = torch.cuda.memory_allocated()   / 1024**2  # MB
+        reserved = torch.cuda.memory_reserved()    / 1024**2
+        inactive = reserved - alloc
+        peak     = torch.cuda.max_memory_allocated() / 1024**2
+        print(f"[GPU{idx}] alloc {alloc:7.1f} | reserved {reserved:7.1f} "
+              f"| inactive {inactive:7.1f} | peak {peak:7.1f} MB")
+
+        # 가장 큰 블록이 어디서 생겼는지 한 줄만 추려 보기
+        for ln in torch.cuda.memory_summary().splitlines():
+            if re.search(r"size:", ln):
+                print("        ", ln.strip())
+                break
+
+        torch.cuda.reset_peak_memory_stats()
+
+    # nvidia-smi 숫자도 덧붙이기 (optional)
+    try:
+        out = subprocess.check_output(
+            ["nvidia-smi", "--query-gpu=memory.used,memory.total",
+             "--format=csv,noheader,nounits"], text=True)
+        rows = out.strip().splitlines()
+        print("[nvidia-smi] used/total (MB):",
+              " | ".join(f"GPU{n}:{r}" for n, r in enumerate(rows)))
+    except Exception:
+        pass
+# ─────────────────────────────────────────────────────────────
 
 # ──────────────────────────
 #  VRAM 로그 함수
@@ -272,7 +307,9 @@ def main(args):
 
     # 학습 루프
     for epoch in range(1, args.epochs + 1):
+        torch.cuda.empty_cache()
         model.train()
+        torch.cuda.empty_cache()
         pbar = tqdm(train_loader, desc=f"Epoch {epoch}")
 
         for sample in pbar:
@@ -292,6 +329,7 @@ def main(args):
 
             # Stage 2: backward
             scaler.scale(loss).backward()
+            report_gpu_mem(f"step {pbar.n} - after backward")
             log_vram("after_backward", device)
 
             scaler.unscale_(optim)
@@ -299,7 +337,9 @@ def main(args):
             scaler.step(optim)
             scaler.update()
             log_vram("after_opt_step", device)
-
+            del g, logit, loss, sample
+            torch.cuda.empty_cache();  gc.collect()
+            report_gpu_mem(f"step {pbar.n} - after cleanup")
             pbar.set_postfix(loss=loss.item())
 
         # 검증

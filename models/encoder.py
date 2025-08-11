@@ -226,6 +226,8 @@ class TextFeatureExtractor:
 
         # 4) 히든 → 768 투영 & 매핑 -------------------------------------
         hidden4096 = self.glm(**glm_enc).hidden_states[-1][0]   # [T,4096]
+        proj_device = self.proj_down.weight.device
+        hidden4096 = hidden4096.to(proj_device)
         hid768     = self.norm(self.proj_down(hidden4096))      # [T,768]
 
         map_wp2glm = build_cross_map(wp_offsets, glm_offsets)

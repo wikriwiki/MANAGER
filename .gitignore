@@ -6,3 +6,38 @@ models/__pycache__
 __pycache__
 cache
 error
+.log
+cat >> .gitignore << 'EOF'
+
+# ===== build/cache/artifacts =====
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+.offload/
+offload/
+cache/
+logs/
+*.log
+
+# ===== data/artifacts =====
+*.db
+*.db-shm
+*.db-wal
+*.pt
+*.bin
+*.npy
+*.npz
+
+# If CSV들은 산출물이라면 포함
+# (데이터셋 원본을 버전에 포함하고 싶으면 아래 줄은 주석 처리)
+*.csv
+
+# 모델 체크포인트/결과
+*.ckpt
+*.pth
+*.pt
+best_checkpoint.pt
+test_predictions.csv
+test_metrics_summary.csv
+EOF
