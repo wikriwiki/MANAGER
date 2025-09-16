@@ -41,3 +41,4 @@ best_checkpoint.pt
 test_predictions.csv
 test_metrics_summary.csv
 EOF
+*.png
