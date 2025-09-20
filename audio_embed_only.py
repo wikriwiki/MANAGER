@@ -11,8 +11,8 @@ audio_embed_only_v3.py
 실행 예
 ──────
 # 0,1,2 번 GPU 세 장만 사용
-CUDA_VISIBLE_DEVICES=0,1,2 python audio_embed_only_v3.py \
-    --cache ./cache --workers 12
+CUDA_VISIBLE_DEVICES=0,1,2,3 python audio_embed_only.py \
+    --cache ./cache --workers 16
 """
 
 from __future__ import annotations
@@ -30,8 +30,8 @@ RAW_VDIR  = Path("/mnt/shares/videos")
 WAV_ROOT  = Path("/mnt/third_ssd/data/wav")
 CACHE_DIR = Path("./cache")
 
-SLOTS_PER_GPU   = 20            # 카드당 HuBERT 인스턴스 수
-THREADS_PER_PROC = 8           # 한 프로세스당 CPU 작업 스레드 수
+SLOTS_PER_GPU   =  5           # 카드당 HuBERT 인스턴스 수
+THREADS_PER_PROC = 4           # 한 프로세스당 CPU 작업 스레드 수
 FPS              = 1           # 프레임 추출 fps (wav 생성만 할 때는 사용 안 함)
 # ────────────────────────────────────────────────────────────────────────
 
